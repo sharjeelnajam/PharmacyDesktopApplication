@@ -61,6 +61,7 @@ public sealed class MasterDb : ExcelDatabase
         return code;
     }
 
+    /// <summary>Owner only: creates a pharmacy, its Admin login and its workbook, with a signed licence.</summary>
     public (Tenant tenant, AppUser admin) RegisterPharmacy(Tenant tenant, string adminName, string username, string password)
     {
         tenant.Code = Regex.Replace(tenant.Code.ToUpperInvariant(), "[^A-Z0-9_-]", "");
@@ -71,6 +72,8 @@ public sealed class MasterDb : ExcelDatabase
         AppUser admin = null!;
         Commit(() =>
         {
+            tenant.LastSeen = DateTime.Today;
+            LicenseService.Sign(tenant);
             Tenants.Add(tenant);
             admin = Users.Add(new AppUser
             {
@@ -98,7 +101,48 @@ public sealed class MasterDb : ExcelDatabase
                                                   && u.Username.Equals(username.Trim(), StringComparison.OrdinalIgnoreCase));
         if (user == null || !user.IsActive || !PasswordHasher.Verify(password, user.PasswordHash)) return null;
         user.LastLogin = DateTime.Now;
-        try { Save(); } catch (DataFileLockedException) { /* last-login stamp is not critical */ }
         return user;
+    }
+
+    /// <summary>Called after a successful, licence-checked login: stamps last-used date and saves.</summary>
+    public void RecordLogin(Tenant tenant)
+    {
+        LicenseService.Touch(tenant);
+        try { Save(); } catch (DataFileLockedException) { /* stamps are not critical */ }
+    }
+
+    /// <summary>Owner only: change licence fields and re-sign them.</summary>
+    public void UpdateLicense(Tenant tenant, Action<Tenant> change) =>
+        Commit(() =>
+        {
+            change(tenant);
+            LicenseService.Sign(tenant);
+        });
+
+    /// <summary>Applies a renewal key typed in at a store. Returns the new expiry, or null if the key is wrong.</summary>
+    public DateTime? ApplyRenewalKey(Tenant tenant, string key)
+    {
+        var expiry = LicenseService.ParseRenewalKey(tenant.Code, key);
+        if (expiry == null) return null;
+        UpdateLicense(tenant, t =>
+        {
+            t.ExpiresOn = expiry;
+            t.IsActive = true;
+            if (t.LastSeen > DateTime.Today) t.LastSeen = DateTime.Today;
+        });
+        return expiry;
+    }
+
+    /// <summary>Owner only: removes a pharmacy and its logins. Its data workbook is renamed, not deleted.</summary>
+    public void RemovePharmacy(Tenant tenant)
+    {
+        Commit(() =>
+        {
+            Users.Rows.RemoveAll(u => u.TenantId == tenant.Id);
+            Tenants.Remove(tenant);
+        });
+        var file = TenantFile(tenant);
+        if (File.Exists(file))
+            File.Move(file, Path.Combine(BackupFolder, $"{tenant.Code}_removed_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"));
     }
 }

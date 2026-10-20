@@ -28,4 +28,12 @@
     <PackageReference Include="ClosedXML" Version="0.105.1" />
   </ItemGroup>
 
+  <!-- Use the private, git-ignored owner secrets when present; otherwise the placeholder. -->
+  <ItemGroup Condition="Exists('Core\OwnerSecrets.cs')">
+    <Compile Remove="Core\OwnerSecrets.Default.cs" />
+  </ItemGroup>
+  <Target Name="WarnPlaceholderSecrets" BeforeTargets="Build" Condition="!Exists('Core\OwnerSecrets.cs')">
+    <Warning Text="Core\OwnerSecrets.cs not found — building with placeholder secrets; owner sign-in is disabled." />
+  </Target>
+
 </Project>

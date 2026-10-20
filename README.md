@@ -10,12 +10,42 @@ All data is stored in **Excel workbooks** in a `Data` folder next to `PharmaDesk
 - **From source:** `dotnet run` (or open `PharmacyDesktop.slnx` in Visual Studio and press F5).
 - **Re-publish:** `dotnet publish -c Release -o publish`
 
-On first launch you'll be asked to register your first pharmacy and its Admin account.
+Stores can't register themselves — only the software owner creates pharmacies and logins (see below).
+
+## Owner control (subscriptions & logins)
+
+On the login screen press **Ctrl+Shift+O** to open the hidden **owner sign-in**. The Owner Control Panel lets you:
+
+- **New Pharmacy** — name, code, contact, subscription (1/3/6 months, 1 year or no expiry), Admin login.
+- **Extend** — +1/3/6/12 months, set a date, remove expiry, or *Expire now*.
+- **Disable / Enable** — blocks every login of that pharmacy at once (data is kept).
+- **Logins** — add, edit, reset password, enable/disable or delete any user of a pharmacy.
+  Tick *"Pharmacy admin may create staff logins"* if you want a store's Admin to manage its own staff.
+- **Renewal Key** — a code like `ATP2-DDWQ-AXUG-T4BV` that unlocks a pharmacy until a chosen date.
+- **Remove** — deletes the pharmacy and its logins from that computer (its workbook is moved to `Data\Backups`).
+
+**How it works for stores you've delivered to (offline):** each store runs its own copy, so your PC can't
+switch theirs off remotely. Instead every pharmacy has an **expiry date**: after it, logins are blocked with
+an "access blocked" screen even with no internet. To renew, open *Renewal key for another computer*, type the
+store's pharmacy code and the new date, and send them the key — they type it on the blocked screen.
+To stop a store, simply don't send a key.
+
+**Protection:** the licence fields in `Pharmacies.xlsx` are signed with a secret compiled into the exe — editing
+the expiry/active cells in Excel blocks the pharmacy ("licence invalid"). Setting the PC's date back is detected.
+(A determined programmer could still decompile a .NET exe; this stops ordinary tampering.)
+
+### Owner setup (once)
+
+- Your private secrets live in `Core\OwnerSecrets.cs` (**git-ignored, never pushed**). Your initial owner login is in
+  `OWNER-LOGIN.txt` (also git-ignored). **Back up `Core\OwnerSecrets.cs`** — if `LicenseSecret` changes, all
+  existing pharmacies and renewal keys become invalid.
+- Change the owner password: run `PharmaDesk.exe --owner-hash`, paste the copied hash into `OwnerPasswordHash`, rebuild/publish.
+- A fresh clone without `OwnerSecrets.cs` builds with placeholder secrets (owner sign-in disabled) and a build warning.
 
 ## Multiple pharmacies (tenants)
 
 - The login screen asks for **Pharmacy → Username → Password**.
-- "New pharmacy? Register here" creates another pharmacy with its own Admin.
+- Pharmacies are created by the owner in the Owner Control Panel.
 - Each pharmacy has its **own workbook** (`Data\<CODE>.xlsx`), so data never mixes.
 - `Data\Pharmacies.xlsx` holds the pharmacy list and user accounts (passwords are PBKDF2-hashed).
 

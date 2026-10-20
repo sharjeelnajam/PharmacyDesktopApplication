@@ -426,3 +426,9 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# PharmaDesk private owner secrets and app data
+Core/OwnerSecrets.cs
+OWNER-LOGIN.txt
+Data/
+publish/

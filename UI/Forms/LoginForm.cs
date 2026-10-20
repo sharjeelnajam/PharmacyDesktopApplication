@@ -86,22 +86,10 @@ public class LoginForm : Form
         var login = new ModernButton("Sign in", Theme.Glyph.Lock) { Location = new Point(72, y + 44), Width = 400, Height = 46, Font = new Font("Segoe UI Semibold", 11F) };
         login.Click += (_, _) => DoLogin();
 
-        var register = new LinkLabel
-        {
-            Text = "New pharmacy? Register here",
-            AutoSize = true,
-            Location = new Point(72, y + 104),
-            LinkColor = Theme.Primary,
-            ActiveLinkColor = Theme.PrimaryDark,
-            Font = Theme.BodyBold,
-            LinkBehavior = LinkBehavior.HoverUnderline
-        };
-        register.LinkClicked += (_, _) => Register();
-
         var version = Ui.Label("PharmaDesk v1.0 · Works fully offline · Data stored in Excel", Theme.Small, Theme.TextMuted);
         version.Location = new Point(72, 560);
 
-        right.Controls.AddRange(new Control[] { close, title, sub, show, _error, login, register, version });
+        right.Controls.AddRange(new Control[] { close, title, sub, show, _error, login, version });
         Controls.Add(right);
         Controls.Add(brand);
 
@@ -109,31 +97,20 @@ public class LoginForm : Form
         Load += (_, _) => LoadPharmacies();
         Shown += (_, _) =>
         {
-            if (Session.Master.Tenants.Rows.Count == 0) Register(firstRun: true);
+            if (Session.Master.Tenants.Rows.Count == 0)
+                _error.Text = "No pharmacy is set up on this computer.\nPlease contact your software provider.";
             if (_pharmacy.Items.Count > 0) _user.Focus();
         };
     }
 
     private void LoadPharmacies(Tenant? select = null)
     {
+        if (select != null && !Session.Master.Tenants.Rows.Contains(select)) select = null;
         _pharmacy.Items.Clear();
-        foreach (var t in Session.Master.Tenants.Rows.Where(t => t.IsActive).OrderBy(t => t.Name))
+        foreach (var t in Session.Master.Tenants.Rows.OrderBy(t => t.Name))
             _pharmacy.Items.Add(t);
         var last = Properties.LastPharmacy;
         _pharmacy.SelectedItem = select ?? _pharmacy.Items.Cast<Tenant>().FirstOrDefault(t => t.Code == last) ?? _pharmacy.Items.Cast<Tenant>().FirstOrDefault();
-    }
-
-    private void Register(bool firstRun = false)
-    {
-        using var dlg = new RegisterPharmacyForm(firstRun);
-        if (dlg.ShowDialog(this) == DialogResult.OK && dlg.CreatedTenant != null)
-        {
-            LoadPharmacies(dlg.CreatedTenant);
-            _user.Text = dlg.CreatedUsername;
-            _pass.Clear();
-            _pass.Focus();
-            _error.Text = "";
-        }
     }
 
     private void DoLogin()
@@ -153,6 +130,14 @@ public class LoginForm : Form
                 _pass.Focus();
                 return;
             }
+
+            // Subscription / owner control: block disabled, expired or tampered pharmacies.
+            var status = LicenseService.Check(tenant);
+            if (!status.CanLogin && !LicenseBlockedDialog.TryUnlock(this, tenant, status)) return;
+            status = LicenseService.Check(tenant);
+            Session.Master.RecordLogin(tenant);
+            if (status.DaysLeft is >= 0 and <= 7)
+                Ui.Info($"Your PharmaDesk subscription ends on {tenant.ExpiresOn:dd-MMM-yyyy} ({status.DaysLeft} day(s) left).\nPlease contact your software provider to renew.", "Subscription reminder");
 
             Session.Start(tenant, user);
             Properties.LastPharmacy = tenant.Code;
@@ -180,6 +165,28 @@ public class LoginForm : Form
         {
             Cursor = Cursors.Default;
         }
+    }
+
+    /// <summary>Hidden owner entry: Ctrl+Shift+O opens the owner sign-in.</summary>
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == (Keys.Control | Keys.Shift | Keys.O))
+        {
+            OpenOwnerPanel();
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private void OpenOwnerPanel()
+    {
+        if (!OwnerLoginDialog.SignIn(this)) return;
+        Hide();
+        using (var panel = new OwnerForm()) panel.ShowDialog();
+        Show();
+        LoadPharmacies(_pharmacy.SelectedItem as Tenant);
+        _error.Text = Session.Master.Tenants.Rows.Count == 0 ? _error.Text : "";
+        _user.Focus();
     }
 
     private void StartDrag(object? sender, MouseEventArgs e) => _dragStart = e.Location;

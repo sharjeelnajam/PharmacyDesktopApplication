@@ -45,8 +45,8 @@ public class UsersPage : ListPage<UserRow>
         Summary.Text = $"{rows.Count} user(s)";
     }
 
-    protected override void OnAdd() { if (EditUser(null)) LoadData(); }
-    protected override void OnEdit(UserRow row) { if (EditUser(row.User)) LoadData(); }
+    protected override void OnAdd() { if (UserEditor.Edit(FindForm(), Session.Tenant.Id, null, Session.User.Id)) LoadData(); }
+    protected override void OnEdit(UserRow row) { if (UserEditor.Edit(FindForm(), Session.Tenant.Id, row.User, Session.User.Id)) LoadData(); }
 
     protected override void OnDelete(UserRow row)
     {
@@ -56,10 +56,16 @@ public class UsersPage : ListPage<UserRow>
             Ui.Try(() => Session.Master.Commit(() => Session.Master.Users.Remove(row.User)));
         LoadData();
     }
+}
 
-    private bool EditUser(AppUser? user)
+/// <summary>Add/edit a login of one pharmacy. Used by the store Admin (Users page) and by the owner panel.</summary>
+public static class UserEditor
+{
+    /// <param name="selfId">Id of the signed-in user (0 for the owner) so people can't lock themselves out.</param>
+    public static bool Edit(IWin32Window? owner, int tenantId, AppUser? user, int selfId)
     {
-        var u = user ?? new AppUser { TenantId = Session.Tenant.Id };
+        var tenantUsers = Session.Master.Users.Rows.Where(x => x.TenantId == tenantId);
+        var u = user ?? new AppUser { TenantId = tenantId };
         var isNew = user == null;
         using var d = new FormDialog(isNew ? "Add user" : "Edit user", isNew ? null : "Leave password empty to keep the current one.", 2, 600);
         d.AddText("name", "FULL NAME *", u.FullName);
@@ -72,15 +78,15 @@ public class UsersPage : ListPage<UserRow>
         {
             if (x.Str("name").Length < 2) return "Enter the full name.";
             if (x.Str("user").Length < 3) return "Username must be at least 3 characters.";
-            if (TenantUsers.Any(o => o != user && o.Username.Equals(x.Str("user"), StringComparison.OrdinalIgnoreCase))) return "This username is already taken.";
+            if (tenantUsers.Any(o => o != user && o.Username.Equals(x.Str("user"), StringComparison.OrdinalIgnoreCase))) return "This username is already taken.";
             var p = x["pass"].Text;
             if ((isNew || p.Length > 0) && p.Length < 4) return "Password must be at least 4 characters.";
             if (p != x["pass2"].Text) return "Passwords do not match.";
-            if (!isNew && user!.Id == Session.User.Id && (x.Str("role") != Roles.Admin || !x.Bool("active")))
+            if (!isNew && user!.Id == selfId && (x.Str("role") != Roles.Admin || !x.Bool("active")))
                 return "You can't remove your own Admin rights or disable yourself.";
             return null;
         };
-        if (d.ShowDialog(FindForm()) != DialogResult.OK) return false;
+        if (d.ShowDialog(owner) != DialogResult.OK) return false;
         return Ui.Try(() => Session.Master.Commit(() =>
         {
             u.FullName = d.Str("name");

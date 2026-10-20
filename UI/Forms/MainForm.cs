@@ -68,7 +68,7 @@ public class MainForm : Form
 
         var y = 4;
         string? section = null;
-        foreach (var n in _nav.Where(n => n.Roles.Contains(Session.User.Role)))
+        foreach (var n in _nav.Where(Allowed))
         {
             if (n.Section != section)
             {
@@ -146,7 +146,17 @@ public class MainForm : Form
     public void Navigate(string key)
     {
         var entry = _nav.FirstOrDefault(n => n.Key == key);
-        if (entry == null || !entry.Roles.Contains(Session.User.Role)) return;
+        if (entry == null || !Allowed(entry)) return;
+
+        // The subscription may run out (or be disabled) while the app stays open.
+        var licence = LicenseService.Check(Session.Tenant);
+        if (!licence.CanLogin)
+        {
+            Ui.Error(licence.Message, "PharmaDesk subscription");
+            LoggedOut = true;
+            BeginInvoke(Close);
+            return;
+        }
 
         if (!_pages.TryGetValue(key, out var page))
         {
@@ -167,6 +177,10 @@ public class MainForm : Form
         page.OnPageShown();
         RefreshBadges();
     }
+
+    /// <summary>Role check; the Users page also needs the owner to allow staff management for this pharmacy.</summary>
+    private static bool Allowed(NavEntry n) =>
+        n.Roles.Contains(Session.User.Role) && (n.Key != "users" || Session.Tenant.AllowUserManagement);
 
     public void RefreshBadges()
     {

@@ -16,8 +16,19 @@ public class Tenant : IEntity
     public string Address { get; set; } = "";
     public string Phone { get; set; } = "";
     public string LicenseNo { get; set; } = "";
+    public string ContactPerson { get; set; } = "";
+    public string Notes { get; set; } = "";
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+    // ── Subscription (signed; see LicenseService) ──
+    /// <summary>Last day the pharmacy may log in. Null = no expiry.</summary>
+    public DateTime? ExpiresOn { get; set; }
+    /// <summary>Last date the app was used, for detecting a clock set backwards.</summary>
+    public DateTime? LastSeen { get; set; }
+    /// <summary>When true the pharmacy's own Admin may create/edit staff logins.</summary>
+    public bool AllowUserManagement { get; set; }
+    public string LicenseSig { get; set; } = "";
 
     public override string ToString() => Name;
 }
