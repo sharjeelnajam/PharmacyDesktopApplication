@@ -432,3 +432,5 @@ Core/OwnerSecrets.cs
 OWNER-LOGIN.txt
 Data/
 publish/
+
+owner.enabled

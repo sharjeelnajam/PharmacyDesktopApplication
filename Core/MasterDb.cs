@@ -47,6 +47,13 @@ public sealed class MasterDb : ExcelDatabase
         return db;
     }
 
+    public static MasterDb OpenAt(string path)
+    {
+        var db = new MasterDb(path);
+        db.LoadOrCreate();
+        return db;
+    }
+
     public static string TenantFile(Tenant t) => Path.Combine(DataFolder, $"{t.Code}.xlsx");
 
     public string SuggestCode(string pharmacyName)
@@ -144,5 +151,59 @@ public sealed class MasterDb : ExcelDatabase
         var file = TenantFile(tenant);
         if (File.Exists(file))
             File.Move(file, Path.Combine(BackupFolder, $"{tenant.Code}_removed_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"));
+    }
+}
+
+/// <summary>Builds the package that is delivered to one customer.</summary>
+public static class CustomerPackage
+{
+    /// <summary>
+    /// Creates <paramref name="folder"/> with PharmaDesk.exe and a Data folder that contains ONLY this pharmacy
+    /// (its licence + logins + workbook), then a .zip beside it. Returns the zip path.
+    /// An existing package is refreshed (licence and logins); the customer's business data workbook is never overwritten.
+    /// </summary>
+    public static string Create(MasterDb master, Tenant tenant, string folder, bool includeExe = true)
+    {
+        var exe = Environment.ProcessPath ?? "";
+        // A single-file exe has no assembly location; a dev build would produce a package that cannot run on its own.
+        if (includeExe && !string.IsNullOrEmpty(typeof(CustomerPackage).Assembly.Location))
+            throw new InvalidOperationException("This is a development build. Run the published single-file PharmaDesk.exe (from the publish folder) to export customer packages.");
+
+        var data = Path.Combine(folder, "Data");
+        Directory.CreateDirectory(data);
+        if (includeExe) File.Copy(exe, Path.Combine(folder, "PharmaDesk.exe"), true);
+
+        var masterPath = Path.Combine(data, "Pharmacies.xlsx");
+        if (File.Exists(masterPath)) File.Delete(masterPath);
+        var target = MasterDb.OpenAt(masterPath);
+        target.Commit(() =>
+        {
+            var t = target.Tenants.Add(new Tenant
+            {
+                Code = tenant.Code, Name = tenant.Name, Address = tenant.Address, Phone = tenant.Phone, LicenseNo = tenant.LicenseNo,
+                ContactPerson = tenant.ContactPerson, IsActive = tenant.IsActive, CreatedAt = tenant.CreatedAt, ExpiresOn = tenant.ExpiresOn,
+                LastSeen = tenant.LastSeen, AllowUserManagement = tenant.AllowUserManagement, LicenseSig = tenant.LicenseSig
+                // Owner notes are deliberately not copied.
+            });
+            foreach (var u in master.Users.Rows.Where(u => u.TenantId == tenant.Id))
+                target.Users.Add(new AppUser
+                {
+                    TenantId = t.Id, Username = u.Username, FullName = u.FullName, PasswordHash = u.PasswordHash,
+                    Role = u.Role, IsActive = u.IsActive, CreatedAt = u.CreatedAt
+                });
+        });
+
+        var work = Path.Combine(data, tenant.Code + ".xlsx");
+        if (!File.Exists(work))
+        {
+            var source = MasterDb.TenantFile(tenant);
+            if (File.Exists(source)) File.Copy(source, work);
+            else TenantDb.Open(work);
+        }
+
+        var zip = folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".zip";
+        if (File.Exists(zip)) File.Delete(zip);
+        System.IO.Compression.ZipFile.CreateFromDirectory(folder, zip, System.IO.Compression.CompressionLevel.Optimal, true);
+        return zip;
     }
 }

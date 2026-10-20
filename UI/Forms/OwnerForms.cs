@@ -201,6 +201,8 @@ public class OwnerForm : Form
         _toggle.Click += (_, _) => ToggleActive();
         var key = new ModernButton("Renewal Key", Theme.Glyph.Tag, ButtonKind.Secondary);
         key.Click += (_, _) => { if (Selected is { } t) RenewalKeyDialog.Show(this, t); };
+        var export = new ModernButton("Export for Customer", Theme.Glyph.Folder, ButtonKind.Info);
+        export.Click += (_, _) => Export();
         var remove = new ModernButton("Remove", Theme.Glyph.Delete, ButtonKind.Secondary);
         remove.Click += (_, _) => Remove();
 
@@ -209,7 +211,7 @@ public class OwnerForm : Form
 
         // Actions for the selected pharmacy get their own row so they never crowd the grid title.
         var actions = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 54, BackColor = Theme.Background, WrapContents = false, Padding = new Padding(0, 8, 0, 0) };
-        foreach (var b in new Control[] { add, edit, users, extend, _toggle, key, remove }) { b.Margin = new Padding(0, 0, 10, 0); actions.Controls.Add(b); }
+        foreach (var b in new Control[] { add, edit, users, extend, _toggle, export, key, remove }) { b.Margin = new Padding(0, 0, 10, 0); actions.Controls.Add(b); }
 
         body.Controls.Add(card);
         body.Controls.Add(actions);
@@ -319,6 +321,23 @@ public class OwnerForm : Form
         var enable = !t.IsActive;
         if (!enable && !Ui.Confirm($"Disable '{t.Name}'?\n\nAll of its logins will be blocked immediately on this computer. Its data is kept.")) return;
         if (Ui.Try(() => Db.UpdateLicense(t, x => x.IsActive = enable))) LoadData();
+    }
+
+    /// <summary>Builds a zip for one customer: exe + Data folder holding only that pharmacy.</summary>
+    private void Export()
+    {
+        if (Selected is not { } t) { Ui.Info("Select a pharmacy first."); return; }
+        var st = LicenseService.Check(t);
+        if (!st.CanLogin && !Ui.Confirm($"'{t.Name}' is currently {st.Label.ToLower()} - the customer would be blocked on first run.\n\nExport anyway?")) return;
+        using var dlg = new FolderBrowserDialog { Description = $"Choose where to create the package for {t.Name}", UseDescriptionForTitle = true };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        var folder = Path.Combine(dlg.SelectedPath, "PharmaDesk_" + t.Code);
+        if (File.Exists(Path.Combine(folder, "Data", t.Code + ".xlsx")) &&
+            !Ui.Confirm("A package for this customer already exists there.\n\nRefresh its licence and logins? (The customer's business data is kept.)")) return;
+        string? zip = null;
+        if (!Ui.Try(() => zip = CustomerPackage.Create(Db, t, folder))) return;
+        Ui.Info($"Package ready for {t.Name}:\n\n{zip}\n\nSend this zip. The customer unzips it anywhere and runs PharmaDesk.exe.\nIt contains only this pharmacy and has no owner panel.", "Package created");
+        System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{zip}\"");
     }
 
     private void Remove()

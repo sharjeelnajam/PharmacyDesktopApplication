@@ -131,6 +131,11 @@ public static class LicenseService
 
     // ───── Owner sign-in ─────
 
+    /// <summary>The owner panel only exists on the owner's own PC: it needs a marker file next to the exe
+    /// (never included in customer packages).</summary>
+    public static bool OwnerMode =>
+        File.Exists(Path.Combine(AppContext.BaseDirectory, "owner.enabled"));
+
     public static bool OwnerConfigured => OwnerSecrets.OwnerPasswordHash.Length > 0;
 
     public static bool VerifyOwner(string username, string password) =>

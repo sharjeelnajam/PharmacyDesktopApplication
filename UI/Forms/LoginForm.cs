@@ -170,7 +170,7 @@ public class LoginForm : Form
     /// <summary>Hidden owner entry: Ctrl+Shift+O opens the owner sign-in.</summary>
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        if (keyData == (Keys.Control | Keys.Shift | Keys.O))
+        if (keyData == (Keys.Control | Keys.Shift | Keys.O) && LicenseService.OwnerMode)
         {
             OpenOwnerPanel();
             return true;
